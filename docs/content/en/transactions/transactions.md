@@ -4,6 +4,8 @@
 
 `Domain events` and `commands` run in the same database transaction, achieving `strong consistency`. If a `domain event handler` throws an exception, the transaction will roll back, and the operations of both the `command` and the `domain event` will roll back.
 
+`Domain events` are dispatched before `SaveChangesAsync`, so aggregates remain available in the EF Core `ChangeTracker` even when the current unit of work hard-deletes them. The transaction is still open at that point, so integration events created by domain event handlers continue to be persisted through the Outbox flow in the same database transaction.
+
 ## Integration Events and Transactions
 
 The handling of `integration events` currently achieves `eventual consistency` based on the `Outbox pattern` of the CAP framework.
@@ -25,5 +27,4 @@ If the `DomainEventHandler` converts the `DomainEvent` to an `IntegrationEvent`,
 If the database transaction is successfully committed, the execution result of the `CommandHandler` will be returned, the current request processing will be completed, and the `IntegrationEvent` will be published to the message queue.
 
 The `IntegrationEvent` will be handled by the `IntegrationEventHandler` that subscribes to it. After processing, the transaction will be committed. If an exception occurs in the `IntegrationEventHandler`, the framework will log the exception and attempt to retry. By default, it will retry 10 times with a certain interval between each retry.
-
 

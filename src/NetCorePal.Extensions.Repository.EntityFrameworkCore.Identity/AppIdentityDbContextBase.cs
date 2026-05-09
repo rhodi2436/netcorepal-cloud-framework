@@ -142,9 +142,9 @@ public abstract class AppIdentityDbContextBase<TUser, TRole, TKey, TUserClaim, T
             {
                 try
                 {
-                    // ensure field 'Id' initialized when new entity added
-                    await SaveChangesAsync(cancellationToken);
+                    // Dispatch before SaveChangesAsync so hard-deleted aggregates remain available in ChangeTracker.
                     await _mediator.DispatchDomainEventsAsync(this, 0, cancellationToken);
+                    await SaveChangesAsync(cancellationToken);
                     await CommitAsync(cancellationToken);
                     return true;
                 }
@@ -157,8 +157,8 @@ public abstract class AppIdentityDbContextBase<TUser, TRole, TKey, TUserClaim, T
         }
         else
         {
-            await SaveChangesAsync(cancellationToken);
             await _mediator.DispatchDomainEventsAsync(this, 0, cancellationToken);
+            await SaveChangesAsync(cancellationToken);
             return true;
         }
     }

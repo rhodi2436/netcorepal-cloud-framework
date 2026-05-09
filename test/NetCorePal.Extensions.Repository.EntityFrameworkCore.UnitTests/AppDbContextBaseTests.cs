@@ -53,6 +53,7 @@ public partial class TestDbContext : AppDbContextBase
 }
 
 public record TestEntityCreatedEvent(TestEntity Entity) : IDomainEvent;
+public record TestEntityDeletedEvent(int EntityId) : IDomainEvent;
 
 public class TestEntityCreatedEventHandler : IDomainEventHandler<TestEntityCreatedEvent>
 {
@@ -68,6 +69,17 @@ public class TestEntityCreatedEventHandler : IDomainEventHandler<TestEntityCreat
         {
             return Task.CompletedTask;
         }
+    }
+}
+
+public class TestEntityDeletedEventHandler : IDomainEventHandler<TestEntityDeletedEvent>
+{
+    public static List<int> DeletedEntityIds { get; } = [];
+
+    public Task Handle(TestEntityDeletedEvent notification, CancellationToken cancellationToken)
+    {
+        DeletedEntityIds.Add(notification.EntityId);
+        return Task.CompletedTask;
     }
 }
 
@@ -90,6 +102,11 @@ public class TestEntity : Entity<int>
     public void ChangeName(string name)
     {
         Name = name;
+    }
+
+    public void Delete()
+    {
+        AddDomainEvent(new TestEntityDeletedEvent(Id));
     }
 }
     
@@ -196,6 +213,33 @@ public class AppDbContextBaseTests(DbFixture db) : IClassFixture<DbFixture>
         Assert.Equal(1, i);
         Assert.Equal(1, entity.RowVersion.VersionNumber);
         Assert.True(entity.UpdateTime.Value > updateTime);
+    }
+
+    [Fact]
+    public async Task SaveEntitiesAsync_Should_Dispatch_Domain_Event_For_Hard_Deleted_Aggregate()
+    {
+        TestEntityDeletedEventHandler.DeletedEntityIds.Clear();
+        IServiceCollection services = new ServiceCollection();
+        services.AddMediatR(c => c.RegisterServicesFromAssemblies(typeof(AppDbContextBaseTests).Assembly));
+        services.AddLogging();
+        services.AddDbContext<TestDbContext>(o =>
+            o.UseMySql(db.mySqlContainer.GetConnectionString(), MySqlServerVersion.LatestSupportedServerVersion));
+
+        var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        await context.Database.EnsureCreatedAsync();
+        var entity = new TestEntity("abc");
+
+        context.Entities.Add(entity);
+        await context.SaveChangesAsync();
+        entity.ClearDomainEvents();
+        entity.Delete();
+        context.Entities.Remove(entity);
+
+        await context.SaveEntitiesAsync();
+
+        Assert.Contains(entity.Id, TestEntityDeletedEventHandler.DeletedEntityIds);
     }
 
 
